@@ -71,7 +71,7 @@ var (
 	errorMissingOCISpec         = errors.New("Missing OCI specification")
 	defaultKataHostSharedDir    = "/run/kata-containers/shared/sandboxes/"
 	defaultKataGuestSharedDir   = "/run/kata-containers/shared/containers/"
-	mountGuestTag               = "kataShared"
+	mountGuestTag               = "ecrShared"
 	defaultKataGuestSandboxDir  = "/run/kata-containers/sandbox/"
 	type9pFs                    = "9p"
 	typeVirtioFS                = "virtiofs"
