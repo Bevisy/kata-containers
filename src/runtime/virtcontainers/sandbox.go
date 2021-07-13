@@ -11,9 +11,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math"
 	"net"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -2183,6 +2186,41 @@ func (s *Sandbox) setupSandboxCgroup() error {
 	}
 
 	s.state.CgroupPaths = s.cgroupMgr.GetPaths()
+
+	// Update parent pod cgroup to increase memory limits value
+	// It's a workaround for EAS-66423
+	s.Logger().WithField("sandboxid", s.id).Debugln(("[ESFIX] Update parent pod cgroup to increase memory limits value."))
+	total, err := ioutil.ReadFile(filepath.Join("/sys/fs/cgroup/memory/", "memory.limit_in_bytes"))
+	if err != nil {
+		return fmt.Errorf("[ESFIX] Failed to read /sys/fs/cgroup/memory/memory.limit_in_bytes error='%v'", err)
+	}
+	current, err := ioutil.ReadFile(filepath.Join("/sys/fs/cgroup/memory", filepath.Dir("/"+s.state.CgroupPath), "memory.limit_in_bytes"))
+	if err != nil {
+		return fmt.Errorf("[ESFIX] Failed to read parent cgroup file error='%v'", err)
+	}
+	totalMemoryLimit, _ := strconv.ParseInt(strings.TrimSpace(string(total)), 10, 64)
+	currentMemoryLimit, _ := strconv.ParseInt(strings.TrimSpace(string(current)), 10, 64)
+	vmDefaultMemory := int64(s.hypervisor.hypervisorConfig().MemorySize) << utils.MibToBytesShift
+
+	// Do not update pods that without memory limits
+	// Avoid currentMemoryLimit + vmDefaultMemory > totalMemoryLimit
+	// Avoid currentMemoryLimit + vmDefaultMemory > MaxInt64
+	if totalMemoryLimit-currentMemoryLimit >= vmDefaultMemory && math.MaxInt64-currentMemoryLimit >= vmDefaultMemory {
+		podMemoryLimit := currentMemoryLimit + vmDefaultMemory
+
+		resources := specs.LinuxResources{
+			Memory: &specs.LinuxMemory{
+				Limit: &podMemoryLimit,
+			},
+		}
+		parent, err := parentCgroup(cgroups.V1, s.state.CgroupPath)
+		if err != nil {
+			return fmt.Errorf("[ESFIX] Parent cgroup doesn't exist path='%v' error='%v'", parent, err)
+		}
+		if err := parent.Update(&resources); err != nil {
+			return fmt.Errorf("[ESFIX] Failed to update parent pod cgroup path='%v' error='%v'", parent, err)
+		}
+	}
 
 	if err = s.cgroupMgr.Apply(); err != nil {
 		return fmt.Errorf("Could not constrain cgroup: %v", err)
