@@ -15,6 +15,7 @@ import (
 
 	containerd_types "github.com/containerd/containerd/api/types"
 	"github.com/containerd/containerd/mount"
+	v2shim "github.com/containerd/containerd/runtime/v2/shim"
 	taskAPI "github.com/containerd/containerd/runtime/v2/task"
 	"github.com/containerd/typeurl"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -30,6 +31,11 @@ import (
 	vc "github.com/kata-containers/kata-containers/src/runtime/virtcontainers"
 	"github.com/kata-containers/kata-containers/src/runtime/virtcontainers/pkg/compatoci"
 	"github.com/kata-containers/kata-containers/src/runtime/virtcontainers/pkg/oci"
+)
+
+const (
+	// InitPidFile name of the file that contains the init pid
+	InitPidFile = "init.pid"
 )
 
 func create(ctx context.Context, s *service, r *taskAPI.CreateTaskRequest) (*container, error) {
@@ -112,6 +118,11 @@ func create(ctx context.Context, s *service, r *taskAPI.CreateTaskRequest) (*con
 			return nil, err
 		}
 		s.hpid = uint32(pid)
+		// Since this shimv2 cannot get the container processes pid from VM,
+		// thus write the hypervisor pid into init.pid #EAS-66649
+		if err = v2shim.WritePidFile(InitPidFile, int(s.hpid)); err != nil {
+			return nil, fmt.Errorf("write pid file failed: %s", err)
+		}
 
 		go s.startManagementServer(ctx, ociSpec)
 
@@ -139,6 +150,11 @@ func create(ctx context.Context, s *service, r *taskAPI.CreateTaskRequest) (*con
 		_, err = katautils.CreateContainer(ctx, s.sandbox, *ociSpec, rootFs, r.ID, bundlePath, "", disableOutput)
 		if err != nil {
 			return nil, err
+		}
+		// Since this shimv2 cannot get the container processes pid from VM,
+		// thus write the hypervisor pid into init.pid #EAS-66649
+		if err = v2shim.WritePidFile(bundlePath+"/"+InitPidFile, int(s.hpid)); err != nil {
+			return nil, fmt.Errorf("write pid file failed: %s", err)
 		}
 	}
 
