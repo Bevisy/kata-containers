@@ -33,6 +33,7 @@ import (
 	"github.com/kata-containers/kata-containers/src/runtime/virtcontainers/pkg/oci"
 )
 
+// 创建 PodSanbox 或者 PodContainer
 func create(ctx context.Context, s *service, r *taskAPI.CreateTaskRequest) (*container, error) {
 	rootFs := vc.RootFs{}
 	if len(r.Rootfs) == 1 {
@@ -42,12 +43,14 @@ func create(ctx context.Context, s *service, r *taskAPI.CreateTaskRequest) (*con
 		rootFs.Options = m.Options
 	}
 
+	// 获取 detach 终端配置
 	detach := !r.Terminal
 	ociSpec, bundlePath, err := loadSpec(r)
 	if err != nil {
 		return nil, err
 	}
 
+	// 确定创建容器类型：pod_sandbox, pod_container
 	containerType, err := oci.ContainerType(*ociSpec)
 	if err != nil {
 		return nil, err
@@ -57,17 +60,19 @@ func create(ctx context.Context, s *service, r *taskAPI.CreateTaskRequest) (*con
 	rootfs := filepath.Join(r.Bundle, "rootfs")
 
 	switch containerType {
+	// kata pod 创建进入 PodSandbox 分支
 	case vc.PodSandbox:
 		if s.sandbox != nil {
 			return nil, fmt.Errorf("cannot create another sandbox in sandbox: %s", s.sandbox.ID())
 		}
 
+		// 配置初始化，配置来源：配置文件 和 rpc 调用传输的配置
 		s.config, err = loadRuntimeConfig(s, r, ociSpec.Annotations)
 		if err != nil {
 			return nil, err
 		}
 
-		// create tracer
+		// 创建 tracer
 		// This is the earliest location we can create the tracer because we must wait
 		// until the runtime config is loaded
 		jaegerConfig := &katatrace.JaegerConfig{
@@ -90,6 +95,7 @@ func create(ctx context.Context, s *service, r *taskAPI.CreateTaskRequest) (*con
 		s.ctx = newCtx
 		defer span.End()
 
+		// 检查并挂载
 		if rootFs.Mounted, err = checkAndMount(s, r); err != nil {
 			return nil, err
 		}
@@ -102,12 +108,15 @@ func create(ctx context.Context, s *service, r *taskAPI.CreateTaskRequest) (*con
 			}
 		}()
 
+		// 初始化 sandbox 配置
+		// kata采用模板方式初始化sandbox，katautils.HandleFactory根据初始配置创建sandbox模板，配置通过vci返回，这个步骤从配置文件同步配置到vci，后续再从vci同步到SandboxConfig
 		katautils.HandleFactory(ctx, vci, s.config)
 
 		// Pass service's context instead of local ctx to CreateSandbox(), since local
 		// ctx will be canceled after this rpc service call, but the sandbox will live
 		// across multiple rpc service calls.
 		//
+		// 创建 sandbox 入口
 		sandbox, _, err := katautils.CreateSandbox(s.ctx, vci, *ociSpec, *s.config, rootFs, r.ID, bundlePath, "", disableOutput, false)
 		if err != nil {
 			return nil, err
@@ -207,6 +216,7 @@ func loadRuntimeConfig(s *service, r *taskAPI.CreateTaskRequest, anno map[string
 		configPath = os.Getenv("KATA_CONF_FILE")
 	}
 
+	//
 	_, runtimeConfig, err := katautils.LoadConfiguration(configPath, false)
 	if err != nil {
 		return nil, err

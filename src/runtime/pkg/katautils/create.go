@@ -115,15 +115,18 @@ func CreateSandbox(ctx context.Context, vci vc.VC, ociSpec specs.Spec, runtimeCo
 	katatrace.AddTag(span, "container_id", containerID)
 	defer span.End()
 
+	// 初始化 sandbox 配置结构体
 	sandboxConfig, err := oci.SandboxConfig(ociSpec, runtimeConfig, bundlePath, containerID, console, disableOutput, systemdCgroup)
 	if err != nil {
 		return nil, vc.Process{}, err
 	}
 
+	// 检测是否开启 FIPS （在FIPS模式下，只能使用 FIPS 140-2 批准的加密算法）
 	if err := checkForFIPS(&sandboxConfig); err != nil {
 		return nil, vc.Process{}, err
 	}
 
+	// 指定 container 文件系统路径
 	if !rootFs.Mounted && len(sandboxConfig.Containers) == 1 {
 		if rootFs.Source != "" {
 			realPath, err := ResolvePath(rootFs.Source)
@@ -138,6 +141,8 @@ func CreateSandbox(ctx context.Context, vci vc.VC, ociSpec specs.Spec, runtimeCo
 	// Important to create the network namespace before the sandbox is
 	// created, because it is not responsible for the creation of the
 	// netns if it does not exist.
+	//
+	// 创建网络命名空间
 	if err := SetupNetworkNamespace(&sandboxConfig.NetworkConfig); err != nil {
 		return nil, vc.Process{}, err
 	}
@@ -153,6 +158,8 @@ func CreateSandbox(ctx context.Context, vci vc.VC, ociSpec specs.Spec, runtimeCo
 	}()
 
 	// Run pre-start OCI hooks.
+	//
+	// 进入网络命名空间，执行 preStartHook 函数
 	err = EnterNetNS(sandboxConfig.NetworkConfig.NetNSPath, func() error {
 		return PreStartHooks(ctx, ociSpec, containerID, bundlePath)
 	})
@@ -160,6 +167,7 @@ func CreateSandbox(ctx context.Context, vci vc.VC, ociSpec specs.Spec, runtimeCo
 		return nil, vc.Process{}, err
 	}
 
+	// 创建 sandbox；实现函数：src/runtime/virtcontainers/implementation.go impl.CreateSandbox()
 	sandbox, err := vci.CreateSandbox(ctx, sandboxConfig)
 	if err != nil {
 		return nil, vc.Process{}, err

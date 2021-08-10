@@ -208,6 +208,7 @@ func run(id string, initFunc Init, config Config) error {
 		return err
 	}
 
+	// 根据 action 类型处理事件
 	switch action {
 	case "delete":
 		logger := logrus.WithFields(logrus.Fields{
@@ -289,12 +290,14 @@ func (s *Client) Serve() error {
 	if err != nil {
 		return err
 	}
+	// 初始化 ttrpc 服务
 	server, err := newServer()
 	if err != nil {
 		return errors.Wrap(err, "failed creating server")
 	}
 
 	logrus.Debug("registering ttrpc server")
+	// 注册 service 实例到 ttrpc 服务
 	shimapi.RegisterTaskService(server, s.service)
 
 	if err := serve(s.context, server, socketFlag); err != nil {
