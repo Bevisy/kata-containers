@@ -94,6 +94,7 @@ func openLog(ctx context.Context, _ string) (io.Writer, error) {
 	return fifo.OpenFifo(ctx, "log", unix.O_WRONLY, 0700)
 }
 
+// containerdshim.forword() 调用 remoteEventsPublisher.Publish() 处理事件
 func (l *remoteEventsPublisher) Publish(ctx context.Context, topic string, event events.Event) error {
 	ns, _ := namespaces.Namespace(ctx)
 	encoded, err := typeurl.MarshalAny(event)

@@ -61,6 +61,8 @@ func CreateSandbox(ctx context.Context, sandboxConfig SandboxConfig, factory Fac
 	return s, err
 }
 
+// sandbox 创建函数主要逻辑：
+//  创建 sandbox --> 创建 sandbox 网络 --> 将 runtime 进程移动到 sandbox cgroup 内 --> 启动虚拟机 --> 创建容器 --> 存储 sandbox
 func createSandboxFromConfig(ctx context.Context, sandboxConfig SandboxConfig, factory Factory) (_ *Sandbox, err error) {
 	span, ctx := trace(ctx, "createSandboxFromConfig")
 	defer span.End()
@@ -79,6 +81,8 @@ func createSandboxFromConfig(ctx context.Context, sandboxConfig SandboxConfig, f
 	}()
 
 	// Create the sandbox network
+	//
+	// 创建 sandbox 网络
 	if err = s.createNetwork(ctx); err != nil {
 		return nil, err
 	}
@@ -102,6 +106,8 @@ func createSandboxFromConfig(ctx context.Context, sandboxConfig SandboxConfig, f
 	}
 
 	// Start the VM
+	//
+	// 启动虚拟机，根据 hypervisor 配置拉起虚拟机
 	if err = s.startVM(ctx); err != nil {
 		return nil, err
 	}
@@ -113,13 +119,17 @@ func createSandboxFromConfig(ctx context.Context, sandboxConfig SandboxConfig, f
 		}
 	}()
 
+	// 创建网络命名空间
 	s.postCreatedNetwork(ctx)
 
+	// 获取 guest 资源信息
 	if err = s.getAndStoreGuestDetails(ctx); err != nil {
 		return nil, err
 	}
 
 	// Create Containers
+	//
+	// 在 guest 环境中创建 container，container 配置在 SandboxConfig 结构体中
 	if err = s.createContainers(ctx); err != nil {
 		return nil, err
 	}

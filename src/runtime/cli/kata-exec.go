@@ -64,12 +64,14 @@ var kataExecCLICommand = cli.Command{
 			port = defaultKernelParamDebugConsoleVPortValue
 		}
 
+		// 从上下文获取命令行提供的 sandbox ID
 		sandboxID := context.Args().Get(0)
 
 		if err := katautils.VerifyContainerID(sandboxID); err != nil {
 			return err
 		}
 
+		// 获取 socks 连接
 		conn, err := getConn(sandboxID, port)
 
 		if err != nil {
@@ -77,6 +79,7 @@ var kataExecCLICommand = cli.Command{
 		}
 		defer conn.Close()
 
+		// 获取当前进程终端
 		con := console.Current()
 		defer con.Reset()
 
@@ -84,12 +87,14 @@ var kataExecCLICommand = cli.Command{
 			return err
 		}
 
+		// 配置 io 流
 		iostream := &iostream{
 			conn:   conn,
 			exitch: make(chan struct{}),
 			closed: false,
 		}
 
+		// 将 socks 连接 copy 到当前终端
 		ioCopy(iostream, con)
 
 		<-iostream.exitch

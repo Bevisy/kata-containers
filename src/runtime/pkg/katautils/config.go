@@ -1087,6 +1087,8 @@ func initConfig() (config oci.RuntimeConfig, err error) {
 //
 // All paths are resolved fully meaning if this function does not return an
 // error, all paths are valid at the time of the call.
+//
+// LoadConfiguration 加载配置文件，并转换成 runtime 配置
 func LoadConfiguration(configPath string, ignoreLogging bool) (resolvedConfigPath string, config oci.RuntimeConfig, err error) {
 
 	config, err = initConfig()

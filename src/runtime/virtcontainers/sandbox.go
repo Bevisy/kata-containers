@@ -490,8 +490,11 @@ func newSandbox(ctx context.Context, sandboxConfig SandboxConfig, factory Factor
 	}
 
 	// create agent instance
+	//
+	// 创建运行在 sangbox 中的 agent 实例
 	agent := getNewAgentFunc(ctx)()
 
+	// 创建hypervisor实例 -- sandbox的虚拟化平台，根据配置返回不同的虚拟化平台实例；未配置，则报错
 	hypervisor, err := newHypervisor(sandboxConfig.HypervisorType)
 	if err != nil {
 		return nil, err
@@ -542,10 +545,13 @@ func newSandbox(ctx context.Context, sandboxConfig SandboxConfig, factory Factor
 	}
 
 	// store doesn't require hypervisor to be stored immediately
+	//
+	// 根据提供的 sandbox 配置，例如CPU、内存、虚拟设备等，初始化虚拟机配置
 	if err = s.hypervisor.createSandbox(ctx, s.id, s.networkNS, &sandboxConfig.HypervisorConfig); err != nil {
 		return nil, err
 	}
 
+	// 初始化 agent，初始化 trace 功能和基础配置
 	if s.disableVMShutdown, err = s.agent.init(ctx, s, sandboxConfig.AgentConfig); err != nil {
 		return nil, err
 	}

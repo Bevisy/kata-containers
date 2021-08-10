@@ -68,16 +68,26 @@ var shimLog = logrus.WithFields(logrus.Fields{
 })
 
 // New returns a new shim service that can be used via GRPC
+//
+// 创建新的 shim 进程处理 GRPC 请求
+//
+// id： 容器id
+// publisher： &remoteEventsPublisher{
+// address:              addressFlag, 			// /run/containerd/containerd.sock
+// containerdBinaryPath: containerdBinaryFlag, 	// /usr/bin/containerd
+// noReaper:            config.NoReaper, 		// True
+// }
 func New(ctx context.Context, id string, publisher events.Publisher) (cdshim.Shim, error) {
 	shimLog = shimLog.WithFields(logrus.Fields{
 		"sandbox": id,
-		"pid":     os.Getpid(),
+		"pid":     os.Getpid(), // 获取 shim 进程pid
 	})
 	// Discard the log before shim init its log output. Otherwise
 	// it will output into stdio, from which containerd would like
 	// to get the shim's socket address.
 	logrus.SetOutput(ioutil.Discard)
 	opts := ctx.Value(cdshim.OptsKey{}).(cdshim.Opts)
+	// 判断是否开启 debug 日志级别；默认 WarnLevel
 	if !opts.Debug {
 		logrus.SetLevel(logrus.WarnLevel)
 	}
@@ -88,16 +98,18 @@ func New(ctx context.Context, id string, publisher events.Publisher) (cdshim.Shi
 
 	s := &service{
 		id:         id,
-		pid:        uint32(os.Getpid()),
+		pid:        uint32(os.Getpid()), // shim pid
 		ctx:        ctx,
-		containers: make(map[string]*container),
-		events:     make(chan interface{}, chSize),
-		ec:         make(chan exit, bufferSize),
+		containers: make(map[string]*container),    // 容器
+		events:     make(chan interface{}, chSize), // 事件通道
+		ec:         make(chan exit, bufferSize),    // 退出的容器进程
 		cancel:     cancel,
 	}
 
+	// 协程：处理容器进程退出事件：生成容器进程退出事件，并发送至 containerdshim.service.events 通道，等待处理
 	go s.processExits()
 
+	// 协程：处理事件发布 containerdshim.service.events
 	go s.forward(ctx, publisher)
 
 	return s, nil
@@ -235,8 +247,10 @@ func (s *service) StartShim(ctx context.Context, id, containerdBinary, container
 }
 
 func (s *service) forward(ctx context.Context, publisher events.Publisher) {
+	// 轮询 s.events，接收 service.events 的信息
 	for e := range s.events {
 		ctx, cancel := context.WithTimeout(ctx, timeOut)
+		// 发布事件 5s超时
 		err := publisher.Publish(ctx, getTopic(e), e)
 		cancel()
 		if err != nil {
@@ -358,6 +372,8 @@ func (s *service) Cleanup(ctx context.Context) (_ *taskAPI.DeleteResponse, err e
 }
 
 // Create a new sandbox or container with the underlying OCI runtime
+//
+// 使用底层的 OCI 运行时创建一个新的 sandbox 或者 container
 func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (_ *taskAPI.CreateTaskResponse, err error) {
 	start := time.Now()
 	defer func() {
@@ -368,6 +384,7 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (_ *
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// 校验请求中TASK ID -- 支持数字、大小写字母开头，中间连字符 "_.-"
 	if err := katautils.VerifyContainerID(r.ID); err != nil {
 		return nil, err
 	}
@@ -377,6 +394,7 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (_ *
 		err       error
 	}
 	ch := make(chan Result, 1)
+	// 协程：创建 container 或者 sandbox
 	go func() {
 		container, err := create(ctx, s, r)
 		ch <- Result{container, err}
