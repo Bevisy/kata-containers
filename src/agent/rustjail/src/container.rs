@@ -1482,7 +1482,12 @@ async fn execute_hook(logger: &Logger, h: &Hook, st: &OCIState) -> Result<()> {
         return Err(anyhow!(nix::Error::EINVAL));
     }
 
-    let args = h.args.clone();
+    let mut args = h.args.clone();
+    // the hook.args[0] is the hook binary name which shouldn't be included
+    // in the Command.args
+    if args.len() > 1 {
+        args.remove(0);
+    }
     let env: HashMap<String, String> = h
         .env
         .iter()
@@ -1540,6 +1545,16 @@ async fn execute_hook(logger: &Logger, h: &Hook, st: &OCIState) -> Result<()> {
             .unwrap();
         info!(logger, "child stdout: {}", out.as_str());
 
+        let mut errout = String::new();
+        child
+            .stderr
+            .as_mut()
+            .unwrap()
+            .read_to_string(&mut errout)
+            .await
+            .unwrap();
+        error!(logger, "child stderr: {}", errout.as_str());
+
         match child.wait().await {
             Ok(exit) => {
                 let code = exit
@@ -1547,7 +1562,7 @@ async fn execute_hook(logger: &Logger, h: &Hook, st: &OCIState) -> Result<()> {
                     .ok_or_else(|| anyhow!("hook exit status has no status code"))?;
 
                 if code != 0 {
-                    error!(logger, "hook {} exit status is {}", &path, code);
+                    error!(logger, "hook {} exit status is {}, error message is {}", &path, code, errout.as_str());
                     return Err(anyhow!(nix::Error::UnknownErrno));
                 }
 
