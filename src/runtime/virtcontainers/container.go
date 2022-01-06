@@ -886,38 +886,9 @@ func (c *Container) create(ctx context.Context) (err error) {
 		}
 	}
 
-	var (
-		machineType        = c.sandbox.config.HypervisorConfig.HypervisorMachineType
-		normalAttachedDevs []ContainerDevice //for q35: normally attached devices
-		delayAttachedDevs  []ContainerDevice //for q35: delay attached devices, for example, large bar space device
-	)
-	// Fix: https://github.com/kata-containers/runtime/issues/2460
-	if machineType == QemuQ35 {
-		// add Large Bar space device to delayAttachedDevs
-		for _, device := range c.devices {
-			var isLargeBarSpace bool
-			isLargeBarSpace, err = manager.IsVFIOLargeBarSpaceDevice(device.ContainerPath)
-			if err != nil {
-				return
-			}
-			if isLargeBarSpace {
-				delayAttachedDevs = append(delayAttachedDevs, device)
-			} else {
-				normalAttachedDevs = append(normalAttachedDevs, device)
-			}
-		}
-	} else {
-		normalAttachedDevs = c.devices
-	}
-
-	c.Logger().WithFields(logrus.Fields{
-		"machine_type": machineType,
-		"devices":      normalAttachedDevs,
-	}).Info("normal attach devices")
-	if len(normalAttachedDevs) > 0 {
-		if err = c.attachDevices(ctx, normalAttachedDevs); err != nil {
-			return
-		}
+	// Attach devices
+	if err = c.attachDevices(ctx, c.devices); err != nil {
+		return
 	}
 
 	// Deduce additional system mount info that should be handled by the agent
@@ -929,17 +900,6 @@ func (c *Container) create(ctx context.Context) (err error) {
 		return err
 	}
 	c.process = *process
-
-	// lazy attach device after createContainer for q35
-	if machineType == QemuQ35 && len(delayAttachedDevs) > 0 {
-		c.Logger().WithFields(logrus.Fields{
-			"machine_type": machineType,
-			"devices":      delayAttachedDevs,
-		}).Info("lazy attach devices")
-		if err = c.attachDevices(ctx, delayAttachedDevs); err != nil {
-			return
-		}
-	}
 
 	if err = c.setContainerState(types.StateReady); err != nil {
 		return
