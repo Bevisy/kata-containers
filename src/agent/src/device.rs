@@ -770,6 +770,7 @@ pub async fn add_devices(
     sandbox: &Arc<Mutex<Sandbox>>,
 ) -> Result<()> {
     let mut dev_updates = HashMap::<&str, DevUpdate>::with_capacity(devices.len());
+    let mut pci_updates = HashMap::<pci::Address, pci::Address>::new();
 
     for device in devices.iter() {
         let update = add_device(device, sandbox).await?;
@@ -784,9 +785,9 @@ pub async fn add_devices(
                 ));
             }
 
-            let mut sb = sandbox.lock().await;
+            // let mut sb = sandbox.lock().await;
             for (host, guest) in update.pci {
-                if let Some(other_guest) = sb.pcimap.insert(host, guest) {
+                if let Some(other_guest) = pci_updates.insert(host, guest) {
                     return Err(anyhow!(
                         "Conflicting guest address for host device {} ({} versus {})",
                         host,
@@ -798,9 +799,9 @@ pub async fn add_devices(
         }
     }
 
-    if let Some(process) = spec.process.as_mut() {
-        update_env_pci(&mut process.env, &sandbox.lock().await.pcimap)?
-    }
+    // if let Some(process) = spec.process.as_mut() {
+    //     update_env_pci(&mut process.env, &sandbox.lock().await.pcimap)?
+    // }
     update_spec_devices(spec, dev_updates)
 }
 

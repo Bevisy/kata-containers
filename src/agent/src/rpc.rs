@@ -46,7 +46,7 @@ use rustjail::cgroups::Manager;
 use rustjail::process::ProcessOperations;
 
 use crate::device::{
-    add_devices, get_virtio_blk_pci_device_name, update_device_cgroup, update_env_pci,
+    add_devices, get_virtio_blk_pci_device_name, update_device_cgroup,
 };
 use crate::linux_abi::*;
 use crate::metrics::get_metrics;
@@ -365,13 +365,13 @@ impl AgentService {
         let s = self.sandbox.clone();
         let mut sandbox = s.lock().await;
 
-        let mut process = req
+        let process = req
             .process
             .into_option()
             .ok_or_else(|| anyhow!(nix::Error::EINVAL))?;
 
         // Apply any necessary corrections for PCI addresses
-        update_env_pci(&mut process.Env, &sandbox.pcimap)?;
+        // update_env_pci(&mut process.Env, &sandbox.pcimap)?;
 
         let pipe_size = AGENT_CONFIG.read().await.container_pipe_size;
         let ocip = rustjail::process_grpc_to_oci(&process);
