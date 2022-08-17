@@ -816,6 +816,7 @@ func (s *Sandbox) Delete(ctx context.Context) error {
 	return s.store.Destroy(s.id)
 }
 
+// 创建网络
 func (s *Sandbox) createNetwork(ctx context.Context) error {
 	if s.config.NetworkConfig.DisableNewNetwork ||
 		s.config.NetworkConfig.NetworkID == "" {
@@ -1301,6 +1302,7 @@ func (s *Sandbox) CreateContainer(ctx context.Context, contConfig ContainerConfi
 		}
 	}()
 
+	// device 设备添加到 sandbox 的设备管理中
 	// Create the container object, add devices to the sandbox's device-manager:
 	c, err := newContainer(ctx, s, &s.config.Containers[len(s.config.Containers)-1])
 	if err != nil {

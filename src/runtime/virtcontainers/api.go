@@ -70,6 +70,7 @@ func createSandboxFromConfig(ctx context.Context, sandboxConfig SandboxConfig, f
 		}
 	}()
 
+	// 创建 sandbox 网络
 	// Create the sandbox network
 	if err = s.createNetwork(ctx); err != nil {
 		return nil, err

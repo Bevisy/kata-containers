@@ -139,6 +139,7 @@ func CreateSandbox(ctx context.Context, vci vc.VC, ociSpec specs.Spec, runtimeCo
 		sandboxConfig.Containers[0].RootFs = rootFs
 	}
 
+	// 创建命名空间
 	// Important to create the network namespace before the sandbox is
 	// created, because it is not responsible for the creation of the
 	// netns if it does not exist.

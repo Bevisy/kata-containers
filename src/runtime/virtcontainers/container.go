@@ -7,8 +7,10 @@ package virtcontainers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,6 +22,7 @@ import (
 	"github.com/kata-containers/kata-containers/src/runtime/pkg/katautils/katatrace"
 	"github.com/kata-containers/kata-containers/src/runtime/virtcontainers/device/config"
 	"github.com/kata-containers/kata-containers/src/runtime/virtcontainers/device/manager"
+	pbTypes "github.com/kata-containers/kata-containers/src/runtime/virtcontainers/pkg/agent/protocols"
 	"github.com/kata-containers/kata-containers/src/runtime/virtcontainers/pkg/agent/protocols/grpc"
 	vcAnnotations "github.com/kata-containers/kata-containers/src/runtime/virtcontainers/pkg/annotations"
 	"github.com/kata-containers/kata-containers/src/runtime/virtcontainers/types"
@@ -777,6 +780,7 @@ func newContainer(ctx context.Context, sandbox *Sandbox, contConfig *ContainerCo
 		return nil, err
 	}
 
+	// 添加容器设备到 sandbox 的设备管理
 	// Add container's devices to sandbox's device-manager
 	if err := c.createDevices(contConfig); err != nil {
 		return nil, err
@@ -790,6 +794,7 @@ func (c *Container) createMounts(ctx context.Context) error {
 	return c.createBlockDevices(ctx)
 }
 
+// 创建设备
 func (c *Container) createDevices(contConfig *ContainerConfig) error {
 	// If devices were not found in storage, create Device implementations
 	// from the configuration. This should happen at create.
@@ -851,6 +856,66 @@ func (c *Container) checkBlockDeviceSupport(ctx context.Context) bool {
 	return false
 }
 
+// NetworkStatus is for network status annotation for pod
+// Copy from github.com/easystack/multus-cni/types/types.go
+type NetworkStatus struct {
+	Name      string   `json:"name"`
+	Interface string   `json:"interface,omitempty"`
+	IPs       []string `json:"ips,omitempty"`
+	Mac       string   `json:"mac,omitempty"`
+	DNS       DNS      `json:"dns,omitempty"`
+	Gateway   []net.IP `json:"default-route,omitempty"`
+	Gateways  []net.IP `json:"gateways,omitempty"`
+}
+
+// DNS contains values interesting for DNS resolvers
+// Copy from github.com/containernetworking/cni/pkg/types/types.go
+type DNS struct {
+	Nameservers []string `json:"nameservers,omitempty"`
+	Domain      string   `json:"domain,omitempty"`
+	Search      []string `json:"search,omitempty"`
+	Options     []string `json:"options,omitempty"`
+}
+
+const (
+	K8sNetworkStatusAnno = "k8s.v1.cni.cncf.io/networks-status"
+)
+
+func (c *Container) updateInterfaceFromAnnotations(ctx context.Context, inf *pbTypes.Interface) error {
+	networkStatus := c.config.Annotations[K8sNetworkStatusAnno]
+	interfaces := make([]NetworkStatus, 0)
+	err := json.Unmarshal([]byte(networkStatus), &interfaces)
+	if err != nil {
+		c.Logger().WithError(err).Error("parse network status failed")
+		return err
+	}
+
+	for _, netInf := range interfaces {
+		// "nics" 名称非固定，需要后续约定
+		if netInf.Name == "nics" {
+			inf.Name = netInf.Interface
+			// inf.HwAddr = netInf.Mac // mac 地址未指定
+
+			for _, ip := range netInf.IPs {
+				netip := strings.Split(ip, "/")
+				ipAddr := pbTypes.IPAddress{
+					Family:  pbTypes.IPFamily_v4,
+					Address: netip[0],
+					Mask:    netip[1],
+				}
+				inf.IPAddresses = append(inf.IPAddresses, &ipAddr)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (c *Container) addRoutes(ctx context.Context, routes []*pbTypes.Route) ([]*pbTypes.Route, error) {
+	// TODO
+	return []*pbTypes.Route{}, nil
+}
+
 // create creates and starts a container inside a Sandbox. It has to be
 // called only when a new container, not known by the sandbox, has to be created.
 func (c *Container) create(ctx context.Context) (err error) {
@@ -873,8 +938,61 @@ func (c *Container) create(ctx context.Context) (err error) {
 	c.Logger().WithFields(logrus.Fields{
 		"devices": c.devices,
 	}).Info("Attach devices")
+	// 挂载设备
 	if err = c.attachDevices(ctx); err != nil {
-		return
+		return err
+	}
+
+	// 处理 sriov 网卡信息
+	// 网卡以 vfio 设备形式挂载到虚拟机中，获取网卡 interface 列表，筛选网卡，更新网卡信息
+	infs, err := c.sandbox.agent.listInterfaces(ctx)
+	if err != nil {
+		c.Logger().WithError(err).Error("container interface list failed")
+		return err
+	}
+	for _, inf := range infs {
+		// 回环接口，不处理
+		if inf.Name == "lo" {
+			continue
+		}
+
+		// 存在 IP 地址接口，不处理
+		if len(inf.IPAddresses) > 0 {
+			continue
+		}
+
+		// 从注解获取网卡信息，并更新
+		err := c.updateInterfaceFromAnnotations(ctx, inf)
+		if err != nil {
+			c.Logger().WithField("interface", inf.Name).WithError(err).Error("container interface update from annotation failed")
+			return err
+		}
+
+		// TODO 如果注解不存在网卡信息，则网卡不需要被处理
+
+		_, err = c.sandbox.agent.updateInterface(ctx, inf)
+		if err != nil {
+			c.Logger().WithField("interface", inf.Name).WithError(err).Error("container interface update failed")
+			return err
+		}
+	}
+
+	routes, err := c.sandbox.agent.listRoutes(ctx)
+	if err != nil {
+		c.Logger().WithError(err).Error("container list routes failed")
+		return err
+	}
+
+	// 更新路由：添加 sriov 网卡对应的路由
+	newRoutes, err := c.addRoutes(ctx, routes)
+	if err != nil {
+		c.Logger().WithError(err).Error("container add routes failed")
+		return err
+	}
+	_, err = c.sandbox.agent.updateRoutes(ctx, newRoutes)
+	if err != nil {
+		c.Logger().WithError(err).Error("container update routes failed")
+		return err
 	}
 
 	// Deduce additional system mount info that should be handled by the agent
