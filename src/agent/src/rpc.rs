@@ -84,6 +84,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::FileExt;
 use std::path::PathBuf;
 
+use std::os::unix::fs::MetadataExt;
+
 const CONTAINER_BASE: &str = "/run/kata-containers";
 const MODPROBE_PATH: &str = "/sbin/modprobe";
 
@@ -166,6 +168,111 @@ impl AgentService {
             sl(),
             "receive createcontainer, storages: {:?}", &req.storages
         );
+
+        // add /dev/davinci7 and /dev/davinci_manager to mounts
+        // let dev_dir = Path::new("/dev");
+        // let davinci_files = fs::read_dir(dev_dir)
+        //     .expect("Failed to read /dev directory")
+        //     .filter(|entry| {
+        //         if let Ok(entry) = entry {
+        //             let file_name = entry.file_name().to_string_lossy().into_owned();
+        //             file_name.starts_with("davinci")
+        //         } else {
+        //             false
+        //         }
+        //     })
+        //     .map(|entry| {
+        //         if let Ok(entry) = entry {
+        //             entry.path().to_string_lossy().into_owned()
+        //         } else {
+        //             String::new()
+        //         }
+        //     })
+        //     .collect::<Vec<_>>();
+
+        // for file in davinci_files {
+        //     oci.mounts.push(oci::Mount {
+        //         destination: file.to_string(),
+        //         r#type: "bind".to_string(),
+        //         source: file.to_string(),
+        //         options: vec!["rbind".to_string()],
+        //     });
+        // }
+
+        // // add /dev/davinci_manager to mounts
+        // info!(sl(), "JXHX: mount /dev/davinci_manager start...");
+        // const DAVINCI_MANAGER_DEV_DIR: &str = "/dev/davinci_manager";
+        // let davinci_manager_dir = Path::new(DAVINCI_MANAGER_DEV_DIR);
+        // if davinci_manager_dir.exists() {
+        //     oci.mounts.push(oci::Mount {
+        //         destination: DAVINCI_MANAGER_DEV_DIR.to_string(),
+        //         r#type: "bind".to_string(),
+        //         source: DAVINCI_MANAGER_DEV_DIR.to_string(),
+        //         options: vec!["rbind".to_string()],
+        //     });
+
+        //     info!(sl(), "JXHX: mount /dev/davinci_manager successfully");
+        // }
+
+        // // add /dev/hisi_hdc to mounts
+        // info!(sl(), "JXHX: mount /dev/hisi_hdc start...");
+        // const HISI_HDC_DIR: &str = "/dev/hisi_hdc";
+        // let hisi_hdc_dir = Path::new(HISI_HDC_DIR);
+        // if hisi_hdc_dir.exists() {
+        //     oci.mounts.push(oci::Mount {
+        //         destination: HISI_HDC_DIR.to_string(),
+        //         r#type: "bind".to_string(),
+        //         source: HISI_HDC_DIR.to_string(),
+        //         options: vec!["rbind".to_string()],
+        //     });
+        //     info!(sl(), "JXHX: mount /dev/hisi_hdc successfully");
+        // }
+
+        // // add /dev/devmm_svm to mounts
+        // info!(sl(), "JXHX: mount /dev/devmm_svm start...");
+        // const DEVMM_SVM_DIR: &str = "/dev/devmm_svm";
+        // let devmm_svm_dir = Path::new(DEVMM_SVM_DIR);
+        // if devmm_svm_dir.exists() {
+        //     oci.mounts.push(oci::Mount {
+        //         destination: DEVMM_SVM_DIR.to_string(),
+        //         r#type: "bind".to_string(),
+        //         source: DEVMM_SVM_DIR.to_string(),
+        //         options: vec!["rbind".to_string()],
+        //     });
+        //     info!(sl(), "JXHX: mount /dev/devmm_svm successfully");
+        // }
+
+        // // add /dev/davinci7 to mounts
+        // info!(sl(), "JXHX: mount /dev/davinci7 start...");
+        // const DAVINCI_DEV_DIR: &str = "/dev/davinci7";
+        // let davinci_dir = Path::new(DAVINCI_DEV_DIR);
+        // if davinci_dir.exists() {
+        //     oci.mounts.push(oci::Mount {
+        //         destination: DAVINCI_DEV_DIR.to_string(),
+        //         r#type: "bind".to_string(),
+        //         source: DAVINCI_DEV_DIR.to_string(),
+        //         options: vec!["rbind".to_string()],
+        //     });
+        //     info!(sl(), "JXHX: mount /dev/davinci7 successfully");
+        // }
+
+        // add /dev/davinci_manager to oci.linux.devices
+        // info!(sl(), "JXHX: add device: /dev/davinci_manager start...");
+        // const DAVINCI_MANAGER_DEV_PATH: &str = "/dev/davinci_manager";
+        // let davinci_manager = Path::new(DAVINCI_MANAGER_DEV_PATH);
+        // if davinci_manager.exists() {
+        //     let device_info = fs::metadata(DAVINCI_MANAGER_DEV_PATH).unwrap();
+        //     oci.linux.devices.push(oci::LinuxDevice {
+        //         path: DAVINCI_MANAGER_DEV_PATH.to_string(),
+        //         r#type: "c".to_string(),
+        //         major: (device_info.st_rdev() >> 8) as u32,
+        //         minor: (device_info.st_rdev() & 0xFF) as u32,
+        //         file_mode: Some(0660),
+        //         uid: Some(1000),
+        //         gid: Some(1000),
+        //     });
+        //     info!(sl(), "JXHX: add device: /dev/davinci_manager successfully...");
+        // };
 
         // Some devices need some extra processing (the ones invoked with
         // --device for instance), and that's what this call is doing. It
